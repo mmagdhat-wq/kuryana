@@ -22,7 +22,6 @@ class Parser:
 
     headers: Dict[str, str] = {
         "Referer": MYDRAMALIST_WEBSITE,
-        "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.123 Mobile Safari/537.36",
     }
 
     def __init__(
@@ -54,7 +53,7 @@ class Parser:
             # set the main soup var
             soup = BeautifulSoup(
                 resp.text,
-                "html.parser",  # use `lxml` parser for better speed
+                "html.parser",
             )
 
             # set the status code
@@ -73,27 +72,22 @@ class Parser:
 
         container = self.soup.find("div", class_="app-body")
 
-        # if the page was not found,
-        # or there was a problem with scraping,
-        # try to get the error and return the err message
         err: Dict[str, Any] = {}
 
         if container is None:
             return err
 
         try:
-            err["code"] = self.status_code
-            err["error"] = True
-            err["description"] = {
-                "title": container.find("div", class_="box-body")
-                .find("h1")
-                .get_text()
-                .strip(),
-                "info": container.find("div", class_="box-body")
-                .find("p")
-                .get_text()
-                .strip(),
-            }
+            box_body = container.find("div", class_="box-body")
+            if box_body is not None:
+                err["code"] = self.status_code
+                err["error"] = True
+                h1_elem = box_body.find("h1")
+                p_elem = box_body.find("p")
+                err["description"] = {
+                    "title": h1_elem.get_text().strip() if h1_elem else "",
+                    "info": p_elem.get_text().strip() if p_elem else "",
+                }
 
         except Exception:
             pass
@@ -105,7 +99,7 @@ class BaseSearch(Parser):
     def __init__(self, soup: BeautifulSoup, query: str, code: int, ok: bool) -> None:
         super().__init__(soup, query, code, ok)
 
-        self.search_results: Dict[str, List] = {}  # search
+        self.search_results: Dict[str, List] = {}
 
     def search(self) -> Dict[str, Any]:
         return {
@@ -120,8 +114,8 @@ class BaseFetch(Parser):
         super().__init__(soup, query, code, ok)
 
         self.info: Dict[str, Any] = {
-            "link": urljoin(MYDRAMALIST_WEBSITE, query)  # add `link` first data
-        }  # fetch
+            "link": urljoin(MYDRAMALIST_WEBSITE, query)
+        }
 
         self._img_attrs = ["src", "data-cfsrc", "data-src"]
 
@@ -142,18 +136,16 @@ class BaseFetch(Parser):
             return ""
 
         for i in self._img_attrs:
-            if poster.has_attr(i):  # type: ignore
-                return poster[i]  # type: ignore
+            if poster.has_attr(i):
+                return poster[i]
 
-        # blank if none
         return ""
 
-    # get the drama details <= statistics section is added in here
     def _get_details(self, classname: str) -> None:
         if self.soup is None:
             return
 
-        details = self.soup.find("ul", class_=classname)  # "list m-a-0 hidden-md-up"
+        details = self.soup.find("ul", class_=classname)
         if details is None:
             return
 
@@ -162,24 +154,25 @@ class BaseFetch(Parser):
             all_details = details.find_all("li")
 
             for i in all_details:
-                # get each li from <ul>
-                _title = i.find("b").text.strip()
+                b_tag = i.find("b")
+                if b_tag is None:
+                    continue
+                _title = b_tag.text.strip()
 
-                # append each to sub object
                 self.info["details"][
                     _title.replace(":", "").replace(" ", "_").lower()
                 ] = i.text.replace(
                     _title + " ", ""
-                ).strip()  # remove leading and trailing white spaces
+                ).strip()
 
         except Exception:
-            # do nothing, if there was a problem
             pass
 
-    # rating handler, (since it could be N/A which is not convertable to float)
     def _handle_rating(
-        self, component: Union[Tag, NavigableString]
+        self, component: Union[Tag, NavigableString, None]
     ) -> Union[str, float, Any]:
+        if component is None:
+            return ""
         try:
             return float(component.text)
         except Exception:
